@@ -1,0 +1,237 @@
+---
+title: "QuantumCyteWorkflow"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+date: "2025-06-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+download packages
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(tidyverse)
+library(car)
+```
+
+These are the packages that I have installed:
+install.packages("tidyr")
+install.packages("ggplot2")
+install.packages("tidyverse")
+install.packages("car")
+
+download data sets:
+```{r cars}
+quantfinal <- read.csv("FinalData.csv")
+```
+
+Bar graph of the counts of each variant dectected per method:
+```{r pressure, echo=FALSE}
+#Rename the variant column for ease of use
+quantfinal <- quantfinal %>%
+  rename(variant_type = `Variant.seen.0.both..1.Qcyte.only..2.manual.only`)
+
+ #Keep only the values 0, 1, 2
+gene_detection_counts <- quantfinal %>%
+  filter(variant_type %in% c(0, 1, 2)) %>%
+  group_by(Gene, variant_type) %>%
+  summarise(count = n(), .groups = "drop") %>%
+  mutate(
+    method = case_when(
+      variant_type == 0 ~ "Both",
+      variant_type == 1 ~ "Qcyte only",
+      variant_type == 2 ~ "Manual only"
+    )
+  )
+
+# Plot grouped bar chart
+ggplot(gene_detection_counts, aes(x = Gene, y = count, fill = method)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("Both" = "#F2C75C", 
+                               "Qcyte only" = "#3A913F", 
+                               "Manual only" = "#54585A")) + 
+  labs(title = "Gene Detection by Method",
+       x = "Gene",
+       y = "Number of Detections",
+       fill = "Detection Method") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+
+From the above Bar Graph, a Z-test was conducted for only the genes that were detected by both QuantumCyte and Manual:
+```{r}
+# List of genes you're interested in
+genes_of_interest <- c("APC", "BRAF", "BRCA1", "GNAS", "IDH1", "KRAS", "PMS2")
+
+# Initialize results list
+z_results <- data.frame(
+  Gene = character(),
+  Z_statistic = numeric(),
+  P_value = numeric(),
+  stringsAsFactors = FALSE
+)
+
+# Loop through each gene
+for (gene in genes_of_interest) {
+  # Filter and remove NA pairs
+  gene_data <- quantfinal %>%
+    filter(Gene == gene) %>%
+    select(Qcyte.AF, Manual.VAF) %>%
+    na.omit()
+  
+  if (nrow(gene_data) > 1) {  # need at least 2 observations for SD
+    # Paired values
+    paired_Qcyte.AF <- gene_data$Qcyte.AF
+    paired_Manual.VAF <- gene_data$Manual.VAF
+    n <- length(paired_Qcyte.AF)
+    
+    # Z-test calculation
+    mean_diff <- mean(paired_Qcyte.AF) - mean(paired_Manual.VAF)
+    sd_diff <- sd(paired_Qcyte.AF - paired_Manual.VAF)
+    z <- mean_diff / (sd_diff / sqrt(n))
+    p <- 2 * (1 - pnorm(abs(z)))
+    
+    # Store result
+    z_results <- rbind(z_results, data.frame(
+      Gene = gene,
+      Z_statistic = z,
+      P_value = p
+    ))
+  } else {
+    # Add NA if not enough data
+    z_results <- rbind(z_results, data.frame(
+      Gene = gene,
+      Z_statistic = NA,
+      P_value = NA
+    ))
+  }
+}
+
+# Print results
+print(z_results)
+
+```
+
+
+Boxplots of the genes with significant Z-tests (the other genes didn't have enough samples):
+```{r}
+#Graph for APC Variant
+data_apc <- quantfinal %>% 
+  filter(Gene == "APC")
+
+boxplot(data_apc$Manual.VAF, data_apc$Qcyte.AF,
+        names = c("Manual.VAF", "Qcyte.AF"),
+        main = "Box Plot for APC Variant Qcyte.AF vs Manual.VAF",
+        ylab = "VAF",
+        col = c("#A4D65E", "#F8E08E"),
+        border = c("#3A913F", "#F2C75C"))
+
+points(x = rep(1, nrow(data_apc)), 
+       y = data_apc$Manual.VAF, 
+       pch = 19, col = "black")
+
+# For Qcyte.AF (right box at x=2):
+points(x = rep(2, nrow(data_apc)), 
+       y = data_apc$Qcyte.AF, 
+       pch = 19, col = "black")
+
+# Connect the paired points (from the same row) with lines.
+segments(x0 = rep(1, nrow(data_apc)), 
+         y0 = data_apc$Manual.VAF, 
+         x1 = rep(2, nrow(data_apc)), 
+         y1 = data_apc$Qcyte.AF, 
+         col = "black")
+
+#Graph for BRAF Variant
+data_braf <- quantfinal %>% 
+  filter(Gene == "BRAF")
+
+boxplot(data_braf$Manual.VAF, data_braf$Qcyte.AF,
+        names = c("Manual.VAF", "Qcyte.AF"),
+        main = "Box Plot for BRAF Gene Qcyte.AF vs Manual.VAF",
+        ylab = "VAF",
+        col = c("#A4D65E", "#F8E08E"),
+        border = c("#3A913F", "#F2C75C"))
+
+points(x = rep(1, nrow(data_braf)), 
+       y = data_braf$Manual.VAF, 
+       pch = 19, col = "black")
+
+# For Qcyte.AF (right box at x=2):
+points(x = rep(2, nrow(data_braf)), 
+       y = data_braf$Qcyte.AF, 
+       pch = 19, col = "black")
+
+# Connect the paired points (from the same row) with lines.
+segments(x0 = rep(1, nrow(data_braf)), 
+         y0 = data_braf$Manual.VAF, 
+         x1 = rep(2, nrow(data_braf)), 
+         y1 = data_braf$Qcyte.AF, 
+         col = "black")
+
+
+#Graph for KRAS Variant
+data_kras <- quantfinal %>% 
+  filter(Gene == "KRAS")
+
+boxplot(data_kras$Manual.VAF, data_kras$Qcyte.AF,
+        names = c("Manual.VAF", "Qcyte.AF"),
+        main = "Box Plot for KRAS Variant Qcyte.AF vs Manual.VAF",
+        ylab = "VAF",
+        col = c("#A4D65E", "#F8E08E"),
+        border = c("#3A913F", "#F2C75C"))
+
+points(x = rep(1, nrow(data_kras)), 
+       y = data_kras$Manual.VAF, 
+       pch = 19, col = "black")
+
+# For Qcyte.AF (right box at x=2):
+points(x = rep(2, nrow(data_kras)), 
+       y = data_kras$Qcyte.AF, 
+       pch = 19, col = "black")
+
+# Connect the paired points (from the same row) with lines.
+segments(x0 = rep(1, nrow(data_kras)), 
+         y0 = data_kras$Manual.VAF, 
+         x1 = rep(2, nrow(data_kras)), 
+         y1 = data_kras$Qcyte.AF, 
+         col = "black")
+
+
+#Graph for PMS2 Variant
+data_pms2 <- quantfinal %>% 
+  filter(Gene == "PMS2")
+
+boxplot(data_pms2$Manual.VAF, data_pms2$Qcyte.AF,
+        names = c("Manual.VAF", "Qcyte.AF"),
+        main = "Box Plot for PMS2 Gene Qcyte.AF vs Manual.VAF",
+        ylab = "VAF",
+        col = c("#A4D65E", "#F8E08E"),
+        border = c("#3A913F", "#F2C75C"))
+
+points(x = rep(1, nrow(data_pms2)), 
+       y = data_pms2$Manual.VAF, 
+       pch = 19, col = "black")
+
+# For Qcyte.AF (right box at x=2):
+points(x = rep(2, nrow(data_pms2)), 
+       y = data_pms2$Qcyte.AF, 
+       pch = 19, col = "black")
+
+# Connect the paired points (from the same row) with lines.
+segments(x0 = rep(1, nrow(data_pms2)), 
+         y0 = data_pms2$Manual.VAF, 
+         x1 = rep(2, nrow(data_pms2)), 
+         y1 = data_pms2$Qcyte.AF, 
+         col = "black")
+
+
+```
+
